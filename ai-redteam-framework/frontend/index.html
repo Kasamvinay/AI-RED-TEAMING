@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Autonomous AI Red Team — Demo Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d26; --panel-2: #1e2530; --border: #2a3341;
+    --text: #e6e9ef; --muted: #8b96a5; --accent: #4f8cff; --accent-soft: #4f8cff22;
+    --green: #2ecc71; --amber: #f4a72a; --red: #e05260; --grey: #5a6472;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #root { max-width: 1180px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px 0; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 10px 16px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-size: 14px; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid var(--border); }
+  .stat:last-child { border-bottom: none; }
+  .stat .k { color: var(--muted); }
+  .pipeline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+  .stage { padding: 8px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .stage.done { color: var(--green); border-color: var(--green); }
+  .stage.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+  .arrow { color: var(--grey); }
+  .btn { background: var(--accent); color: white; border: none; padding: 9px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn:disabled { background: var(--grey); cursor: not-allowed; }
+  .btn.secondary { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+  select, input[type=number] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+  .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge.critical { background: #8B000033; color: #ff6b6b; }
+  .badge.high { background: #C0392B33; color: #ff8a80; }
+  .badge.medium { background: #D68910 33; color: #f4a72a; }
+  .badge.low { background: #2E86C133; color: #74b9ff; }
+  .badge.minimal, .badge.none { background: #2ecc7133; color: #55efc4; }
+  .card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .card-row { display: flex; justify-content: space-between; align-items: center; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .attack-log { max-height: 420px; overflow-y: auto; }
+  .attack-row { padding: 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .attack-row .prompt { color: var(--muted); font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
+  .outcome-success { color: var(--red); font-weight: 700; }
+  .outcome-partial { color: var(--amber); font-weight: 700; }
+  .outcome-failure { color: var(--muted); }
+  .form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .config-panel { margin-bottom: 16px; }
+  .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+const API_BASE = window.API_BASE || "/api";
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.json();
+}
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+const STAGES = [
+  ["strategy_selected", "Strategy Selected"],
+  ["prompt_generated", "Prompt Generated"],
+  ["attack_sent", "Attack Executed"],
+  ["response_received", "Response Received"],
+  ["judge_completed", "Judge Completed"],
+  ["knowledge_updated", "Knowledge Updated"],
+];
+
+function PipelineViz({ status }) {
+  const checklist = status.stage_checklist || {};
+  const currentStage = status.stage;
+  return (
+    <div className="pipeline">
+      {STAGES.map(([key, label], i) => {
+        const done = !!checklist[key];
+        const active = currentStage === key;
+        return (
+          <React.Fragment key={key}>
+            <div className={`stage ${done ? "done" : ""} ${active ? "active" : ""}`}>
+              {done ? "\u2713 " : ""}{label}
+            </div>
+            {i < STAGES.length - 1 && <span className="arrow">&rarr;</span>}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function Dashboard() {
+  const [status, setStatus] = React.useState({ state: "idle" });
+  const [objectives, setObjectives] = React.useState([]);
+  const [form, setForm] = React.useState({
+    objective: "customer_support", target: "mock", prompt_generator: "template",
+    max_iterations: 15, max_llm_calls: 0, run_name: "prompt_injection_run", fresh_kb: false,
+  });
+  const [starting, setStarting] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    apiGet("/objectives").then(d => setObjectives(d.objectives)).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    const poll = () => apiGet("/status").then(setStatus).catch(() => {});
+    poll();
+    const id = setInterval(poll, 1500);
+    return () => clearInterval(id);
+  }, []);
+
+  const startRun = async () => {
+    setStarting(true); setError(null);
+    try {
+      await apiPost("/runs", {
+        ...form,
+        max_iterations: Number(form.max_iterations),
+        max_llm_calls: Number(form.max_llm_calls),
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const running = status.state === "running";
+  const progress = status.max_iterations ? Math.round((status.iteration / status.max_iterations) * 100) : 0;
+
+  return (
+    <div>
+      <div className="panel config-panel">
+        <h2>Configure &amp; Start Run</h2>
+        <div className="form-row">
+          <select value={form.objective} onChange={e => setForm({ ...form, objective: e.target.value })}>
+            {objectives.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={form.target} onChange={e => setForm({ ...form, target: e.target.value })}>
+            <option value="mock">mock (offline demo)</option>
+            <option value="openai">openai target</option>
+            <option value="acme_supportbot">acme_supportbot (local)</option>
+            <option value="rest_api">rest_api (generic)</option>
+          </select>
+          <select value={form.prompt_generator} onChange={e => setForm({ ...form, prompt_generator: e.target.value })}>
+            <option value="template">template ($0)</option>
+            <option value="llm">llm (provider-backed)</option>
+          </select>
+          <input type="number" value={form.max_iterations} min="1" max="200"
+                 onChange={e => setForm({ ...form, max_iterations: e.target.value })} title="Max iterations" />
+          <label className="muted" style={{display:"flex", alignItems:"center", gap:4}}>
+            <input type="checkbox" checked={form.fresh_kb} onChange={e => setForm({ ...form, fresh_kb: e.target.checked })} />
+            fresh knowledge base
+          </label>
+          <button className="btn" disabled={running || starting} onClick={startRun}>
+            {running ? "Run In Progress..." : starting ? "Starting..." : "Start Attack Run"}
+          </button>
+        </div>
+        {error && <div style={{ color: "var(--red)", fontSize: 13 }}>{error}</div>}
+      </div>
+
+      <div className="grid">
+        <div className="panel">
+          <h2>Current Objective</h2>
+          <div className="stat"><span className="k">Prompt Injection Objective</span><span>{status.objective || "—"}</span></div>
+          <div className="stat"><span className="k">Target</span><span>{status.target || "—"}</span></div>
+          <div className="stat"><span className="k">Current Strategy</span><span>{status.strategy || "—"}</span></div>
+          <div className="stat"><span className="k">Overall Progress</span><span>{status.iteration || 0} / {status.max_iterations || 0} ({progress}%)</span></div>
+          <div className="stat"><span className="k">State</span><span>{status.state}</span></div>
+        </div>
+        <div className="panel">
+          <h2>Current Attack (preview)</h2>
+          <div className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>
+            {status.current_attack_preview || "No attack in flight."}
+          </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: 16 }}>
+        <h2>Pipeline Visualization</h2>
+        <PipelineViz status={status} />
+      </div>
+
+      {status.state === "failed" && (
+        <div className="panel" style={{ marginTop: 16, borderColor: "var(--red)" }}>
+          <h2 style={{ color: "var(--red)" }}>Run Failed</h2>
+          <div className="muted">{status.error}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function severityBadge(sev) {
+  return <span className={`badge ${sev || "none"}`}>{sev || "none"}</span>;
+}
+
+function PreviousRuns({ onViewReport }) {
+  const [runs, setRuns] = React.useState([]);
+  const load = () => apiGet("/runs").then(d => setRuns(d.runs)).catch(() => {});
+  React.useEffect(() => { load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, []);
+
+  return (
+    <div className="panel">
+      <h2>Previous Runs</h2>
+      {runs.length === 0 && <div className="muted">No runs yet — start one from the Dashboard tab.</div>}
+      {runs.map(r => (
+        <div className="card" key={r.run_id}>
+          <div className="card-row">
+            <div>
+              <b>{r.run_name}</b> <span className="muted">#{r.run_id}</span>
+              <div className="muted">{r.started_at ? new Date(r.started_at).toLocaleString() : ""}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {severityBadge(r.highest_severity)}
+              <span className="muted">{r.status}</span>
+            </div>
+          </div>
+          {r.status === "completed" && (
+            <div className="form-row" style={{ marginTop: 8 }}>
+              <button className="link-btn" onClick={() => onViewReport(r.run_id)}>View Attack History</button>
+              {r.mitigation_report_pdf && (
+                <a className="btn secondary" href={`${API_BASE}/mitigation/${r.run_id}`} target="_blank" rel="noreferrer">
+                  Download Mitigation Report
+                </a>
+              )}
+              {r.technical_report_md && (
+                <a className="btn secondary" href={`${API_BASE}/reports/${r.run_id}/technical/md`} target="_blank" rel="noreferrer">
+                  Download Technical Report
+                </a>
+              )}
+            </div>
+          )}
+          {r.status === "failed" && <div className="muted" style={{ color: "var(--red)" }}>{r.error}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportViewer({ runId }) {
+  const [history, setHistory] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!runId) return;
+    apiGet(`/history/${runId}`).then(setHistory).catch(e => setErr(e.message));
+  }, [runId]);
+
+  if (!runId) return <div className="panel"><h2>Report Viewer</h2><div className="muted">Select a run from "Previous Runs" to view its attack history.</div></div>;
+  if (err) return <div className="panel"><h2>Report Viewer</h2><div style={{ color: "var(--red)" }}>{err}</div></div>;
+  if (!history) return <div className="panel"><h2>Report Viewer</h2><div className="muted">Loading...</div></div>;
+
+  return (
+    <div className="panel">
+      <h2>Attack History — {history.count} attacks (run #{runId})</h2>
+      <div className="attack-log">
+        {history.attacks.map((a, i) => (
+          <div className="attack-row" key={i}>
+            <div className="card-row">
+              <span>#{a.iteration} <b>{a.strategy}</b> <span className="muted">({a.technique})</span></span>
+              <span>
+                <span className={`outcome-${a.outcome}`}>{a.outcome}</span>{" "}
+                {severityBadge(a.severity)}{" "}
+                <span className="muted">reward {a.reward.toFixed(2)}</span>
+              </span>
+            </div>
+            <div className="prompt">{a.prompt}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab] = React.useState("dashboard");
+  const [selectedRun, setSelectedRun] = React.useState(null);
+
+  const viewReport = (runId) => { setSelectedRun(runId); setTab("report"); };
+
+  return (
+    <div>
+      <div className="header">
+        <h1>Autonomous AI Red Team &mdash; Demo Console</h1>
+        <span className="muted">Prompt Injection Testing</span>
+      </div>
+      <div className="tabs">
+        <div className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>Dashboard</div>
+        <div className={`tab ${tab === "runs" ? "active" : ""}`} onClick={() => setTab("runs")}>Previous Runs</div>
+        <div className={`tab ${tab === "report" ? "active" : ""}`} onClick={() => setTab("report")}>Report Viewer</div>
+      </div>
+      {tab === "dashboard" && <Dashboard />}
+      {tab === "runs" && <PreviousRuns onViewReport={viewReport} />}
+      {tab === "report" && <ReportViewer runId={selectedRun} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

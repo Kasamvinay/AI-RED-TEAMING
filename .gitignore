@@ -1,0 +1,39 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Databases / local state
+*.sqlite3
+*.db
+*.db-journal
+
+# Environment secrets
+.env
+.env.*
+
+# Test / run outputs
+output/
+reports/
+*.tmp

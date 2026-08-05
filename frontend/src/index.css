@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+::selection {
+  background-color: rgba(1, 118, 211, 0.18);
+}
+
+/* Soft, slow ambient pulse used by the active pipeline stage — subtle, not flashy. */
+@keyframes soft-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(1, 118, 211, 0.28); }
+  50% { box-shadow: 0 0 0 8px rgba(1, 118, 211, 0); }
+}
+.animate-soft-pulse {
+  animation: soft-pulse 2.2s ease-in-out infinite;
+}
